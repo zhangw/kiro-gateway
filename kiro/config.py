@@ -544,6 +544,10 @@ ACCOUNT_PROBABILISTIC_RETRY_CHANCE: float = float(os.getenv("ACCOUNT_PROBABILIST
 # Cache is refreshed only when account is used (not in background)
 ACCOUNT_CACHE_TTL: int = int(os.getenv("ACCOUNT_CACHE_TTL", "43200"))
 
+# Model verification TTL in seconds. A model is listed only after a real
+# successful completion for the account within this window.
+MODEL_VERIFICATION_TTL: int = int(os.getenv("MODEL_VERIFICATION_TTL", "43200"))
+
 # ==================================================================================================
 # State Persistence Settings
 # ==================================================================================================

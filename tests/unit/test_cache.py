@@ -435,3 +435,33 @@ class TestModelInfoCacheThreadSafety:
         print("Проверка: Все чтения вернули одинаковый результат...")
         assert all(r is not None for r in results)
         assert all(r["modelId"] == "claude-sonnet-4" for r in results)
+
+
+
+class TestModelInfoCacheVerification:
+    """Tests for account-scoped successful model verification."""
+
+    def test_verified_model_is_visible_within_ttl(self):
+        cache = ModelInfoCache(verification_ttl=60)
+        now = time.time()
+        cache.mark_verified("gpt-5.6-terra", verified_at=now)
+
+        assert cache.is_verified("gpt-5.6-terra", now=now + 59)
+        assert cache.get_verified_model_ids(now=now + 59) == ["gpt-5.6-terra"]
+
+    def test_verified_model_expires(self):
+        cache = ModelInfoCache(verification_ttl=60)
+        now = time.time()
+        cache.mark_verified("gpt-5.6-terra", verified_at=now)
+
+        assert not cache.is_verified("gpt-5.6-terra", now=now + 61)
+        assert cache.get_verified_model_ids(now=now + 61) == []
+
+    @pytest.mark.asyncio
+    async def test_metadata_update_preserves_verification(self):
+        cache = ModelInfoCache(verification_ttl=60)
+        now = time.time()
+        cache.mark_verified("gpt-5.6-terra", verified_at=now)
+        await cache.update([{"modelId": "claude-sonnet-4.5"}])
+
+        assert cache.get_verified_model_ids(now=now + 20) == ["gpt-5.6-terra"]

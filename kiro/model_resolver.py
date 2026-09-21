@@ -397,21 +397,29 @@ class ModelResolver:
         
         return sorted(models)
     
+    def get_verified_available_models(self) -> List[str]:
+        """
+        Get models that had a successful real completion within the verification TTL.
+
+        This is intentionally separate from get_available_models(), which remains
+        the candidate/metadata list used for optimistic pass-through resolution.
+        """
+        verified = set(self.cache.get_verified_model_ids())
+
+        # Show a configured alias when its canonical target was verified.
+        for alias, target in self.aliases.items():
+            if normalize_model_name(target) in verified:
+                verified.add(alias)
+
+        verified.update(self.hidden_models.keys() & verified)
+        verified -= self.hidden_from_list
+        return sorted(verified)
+
     def get_models_by_family(self, family: str) -> List[str]:
-        """
-        Get available models filtered by family.
-        
-        Used for error messages to suggest alternatives from the same family.
-        
-        Args:
-            family: Model family ('haiku', 'sonnet', 'opus')
-        
-        Returns:
-            List of model IDs from the specified family
-        """
+        """Return candidate models filtered by family for error suggestions."""
         all_models = self.get_available_models()
         return [m for m in all_models if family.lower() in m.lower()]
-    
+
     def get_suggestions_for_model(self, model_name: str) -> List[str]:
         """
         Get available models from the SAME family for error message.

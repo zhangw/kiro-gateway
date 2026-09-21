@@ -65,6 +65,18 @@ except ImportError:
 api_key_header = APIKeyHeader(name="Authorization", auto_error=False)
 
 
+def _model_metadata(model_id: str) -> tuple[str, str]:
+    """Return provider metadata for the public model listing."""
+    normalized = model_id.lower()
+    if normalized.startswith("gpt-"):
+        return "openai", "GPT model via Kiro API"
+    if normalized.startswith("claude-"):
+        return "anthropic", "Claude model via Kiro API"
+    return "kiro", "Model via Kiro API"
+
+
+
+
 async def verify_api_key(auth_header: str = Security(api_key_header)) -> bool:
     """
     Verify API key in Authorization header.
@@ -168,17 +180,17 @@ async def get_models(request: Request):
     else:
         # Legacy: use resolver from first account
         account = request.app.state.account_manager.get_first_account()
-        available_model_ids = account.model_resolver.get_available_models()
+        available_model_ids = account.model_resolver.get_verified_available_models()
     
     # Build OpenAI-compatible model list
-    openai_models = [
-        OpenAIModel(
+    openai_models = []
+    for model_id in available_model_ids:
+        owned_by, description = _model_metadata(model_id)
+        openai_models.append(OpenAIModel(
             id=model_id,
-            owned_by="anthropic",
-            description="Claude model via Kiro API"
-        )
-        for model_id in available_model_ids
-    ]
+            owned_by=owned_by,
+            description=description
+        ))
     
     return ModelList(data=openai_models)
 
@@ -301,6 +313,7 @@ async def chat_completions(request: Request, request_data: ChatCompletionRequest
     # Account System: Account System Failover or Legacy Mode
     # ==============================================================================
     
+    account_manager = request.app.state.account_manager
     if request.app.state.account_system:
         # ==============================================================================
         # ACCOUNT SYSTEM ENABLED: Failover Loop
@@ -439,6 +452,7 @@ async def chat_completions(request: Request, request_data: ChatCompletionRequest
                                 elif client_disconnected:
                                     logger.info(f"HTTP 200 - POST /v1/chat/completions (streaming) - client disconnected")
                                 else:
+                                    await account_manager.report_model_verified(account.id, request_data.model)
                                     logger.info(f"HTTP 200 - POST /v1/chat/completions (streaming) - completed")
                                 if debug_logger:
                                     if streaming_error:
@@ -461,6 +475,7 @@ async def chat_completions(request: Request, request_data: ChatCompletionRequest
                         )
                         
                         await http_client.close()
+                        await account_manager.report_model_verified(account.id, request_data.model)
                         logger.info(f"HTTP 200 - POST /v1/chat/completions (non-streaming) - completed")
                         
                         if debug_logger:
@@ -739,6 +754,7 @@ async def chat_completions(request: Request, request_data: ChatCompletionRequest
                     elif client_disconnected:
                         logger.info(f"HTTP 200 - POST /v1/chat/completions (streaming) - client disconnected")
                     else:
+                        await account_manager.report_model_verified(account.id, request_data.model)
                         logger.info(f"HTTP 200 - POST /v1/chat/completions (streaming) - completed")
                     # Write debug logs AFTER streaming completes
                     if debug_logger:
@@ -763,6 +779,7 @@ async def chat_completions(request: Request, request_data: ChatCompletionRequest
             )
             
             await http_client.close()
+            await account_manager.report_model_verified(account.id, request_data.model)
             
             # Log access log for non-streaming success
             logger.info(f"HTTP 200 - POST /v1/chat/completions (non-streaming) - completed")

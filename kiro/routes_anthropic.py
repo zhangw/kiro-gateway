@@ -313,6 +313,7 @@ async def messages(
     # Account System: Account System Failover or Legacy Mode
     # ==============================================================================
     
+    account_manager = request.app.state.account_manager
     if request.app.state.account_system:
         # ==============================================================================
         # ACCOUNT SYSTEM ENABLED: Failover Loop
@@ -478,6 +479,7 @@ async def messages(
                                 elif client_disconnected:
                                     logger.info(f"HTTP 200 - POST /v1/messages (streaming) - client disconnected")
                                 else:
+                                    await account_manager.report_model_verified(account.id, request_data.model)
                                     logger.info(f"HTTP 200 - POST /v1/messages (streaming) - completed")
                                 
                                 if debug_logger:
@@ -508,6 +510,7 @@ async def messages(
                         )
                         
                         await http_client.close()
+                        await account_manager.report_model_verified(account.id, request_data.model)
                         logger.info(f"HTTP 200 - POST /v1/messages (non-streaming) - completed")
                         
                         if debug_logger:
@@ -837,6 +840,7 @@ async def messages(
                     elif client_disconnected:
                         logger.info(f"HTTP 200 - POST /v1/messages (streaming) - client disconnected")
                     else:
+                        await account_manager.report_model_verified(account.id, request_data.model)
                         logger.info(f"HTTP 200 - POST /v1/messages (streaming) - completed")
                     
                     if debug_logger:
@@ -867,6 +871,7 @@ async def messages(
             )
             
             await http_client.close()
+            await account_manager.report_model_verified(account.id, request_data.model)
             
             logger.info(f"HTTP 200 - POST /v1/messages (non-streaming) - completed")
             

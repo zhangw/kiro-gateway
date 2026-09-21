@@ -1264,7 +1264,8 @@ class TestAccountManagerGetAllAvailableModels:
             
             await manager._initialize_account(account_id)
         
-        # Act
+        # Only models with a real successful completion are exposed by the strict list.
+        manager._accounts[account_id].model_cache.mark_verified("claude-opus-4.5")
         models = manager.get_all_available_models()
         
         # Assert

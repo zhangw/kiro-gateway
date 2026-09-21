@@ -1738,3 +1738,36 @@ class TestAliasSystemSecurity:
         print(f"Received suggestions: {suggestions}")
         # This is expected behavior - alias name doesn't contain family
         assert len(suggestions) > 0
+
+
+
+class TestModelResolverVerifiedModels:
+    """Tests for the strict, successful-completion model list."""
+
+    def test_unverified_candidates_are_hidden(self):
+        resolver = ModelResolver(cache=ModelInfoCache(), hidden_models={})
+        resolver.cache._cache = {
+            "claude-sonnet-4.5": {"modelId": "claude-sonnet-4.5"},
+            "gpt-5.6-terra": {"modelId": "gpt-5.6-terra"},
+        }
+
+        assert resolver.get_verified_available_models() == []
+
+    def test_verified_unknown_model_is_exposed(self):
+        cache = ModelInfoCache(verification_ttl=60)
+        cache.mark_verified("gpt-5.6-terra")
+        resolver = ModelResolver(cache=cache, hidden_models={})
+
+        assert resolver.get_verified_available_models() == ["gpt-5.6-terra"]
+
+    def test_verified_alias_is_exposed(self):
+        cache = ModelInfoCache(verification_ttl=60)
+        cache.mark_verified("auto")
+        resolver = ModelResolver(
+            cache=cache,
+            hidden_models={},
+            aliases={"auto-kiro": "auto"},
+            hidden_from_list=["auto"],
+        )
+
+        assert resolver.get_verified_available_models() == ["auto-kiro"]

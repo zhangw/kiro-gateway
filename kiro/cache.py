@@ -30,7 +30,7 @@ from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
-from kiro.config import MODEL_CACHE_TTL, DEFAULT_MAX_INPUT_TOKENS
+from kiro.config import MODEL_CACHE_TTL, MODEL_VERIFICATION_TTL, DEFAULT_MAX_INPUT_TOKENS
 
 
 class ModelInfoCache:
@@ -50,17 +50,28 @@ class ModelInfoCache:
         >>> max_tokens = cache.get_max_input_tokens("claude-sonnet-4")
     """
     
-    def __init__(self, cache_ttl: int = MODEL_CACHE_TTL):
+    def __init__(
+        self,
+        cache_ttl: int = MODEL_CACHE_TTL,
+        verified_models: Optional[Dict[str, float]] = None,
+        verification_ttl: int = MODEL_VERIFICATION_TTL,
+    ):
         """
         Initializes the model cache.
-        
+
         Args:
-            cache_ttl: Cache time-to-live in seconds (default from config)
+            cache_ttl: Metadata cache time-to-live in seconds.
+            verified_models: Shared account-scoped map of model IDs to the
+                timestamp of their last successful completion.
+            verification_ttl: Time a successful model verification remains
+                visible in the model list.
         """
         self._cache: Dict[str, Dict[str, Any]] = {}
         self._lock = asyncio.Lock()
         self._last_update: Optional[float] = None
         self._cache_ttl = cache_ttl
+        self._verified_models = verified_models if verified_models is not None else {}
+        self._verification_ttl = verification_ttl
     
     async def update(self, models_data: List[Dict[str, Any]]) -> None:
         """
@@ -171,6 +182,36 @@ class ModelInfoCache:
         """
         return list(self._cache.keys())
     
+    def mark_verified(self, model_id: str, verified_at: Optional[float] = None) -> None:
+        """Record a successful real completion for this account's model list."""
+        self._verified_models[model_id] = verified_at if verified_at is not None else time.time()
+
+    def invalidate_verified(self, model_id: str) -> None:
+        """Remove a model from the verified list after an invalid-model response."""
+        self._verified_models.pop(model_id, None)
+
+    def is_verified(self, model_id: str, now: Optional[float] = None) -> bool:
+        """Return whether a model has a non-expired successful verification."""
+        verified_at = self._verified_models.get(model_id)
+        if verified_at is None:
+            return False
+        current_time = now if now is not None else time.time()
+        return current_time - verified_at <= self._verification_ttl
+
+    def get_verified_model_ids(self, now: Optional[float] = None) -> List[str]:
+        """Return model IDs with a non-expired successful verification."""
+        current_time = now if now is not None else time.time()
+        return sorted(
+            model_id
+            for model_id, verified_at in self._verified_models.items()
+            if current_time - verified_at <= self._verification_ttl
+        )
+
+    @property
+    def verified_models(self) -> Dict[str, float]:
+        """Return account-scoped verification timestamps for persistence."""
+        return self._verified_models
+
     @property
     def size(self) -> int:
         """Number of models in the cache."""

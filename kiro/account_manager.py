@@ -160,6 +160,7 @@ class Account:
     failures: int = 0
     last_failure_time: float = 0.0
     models_cached_at: float = 0.0
+    verified_models: Dict[str, float] = field(default_factory=dict)
     stats: AccountStats = field(default_factory=AccountStats)
 
 
@@ -357,6 +358,7 @@ class AccountManager:
                     account.failures = data.get("failures", 0)
                     account.last_failure_time = data.get("last_failure_time", 0.0)
                     account.models_cached_at = data.get("models_cached_at", 0.0)
+                    account.verified_models = data.get("verified_models", {})
                     
                     stats_data = data.get("stats", {})
                     account.stats = AccountStats(
@@ -383,6 +385,7 @@ class AccountManager:
                     "failures": account.failures,
                     "last_failure_time": account.last_failure_time,
                     "models_cached_at": account.models_cached_at,
+                    "verified_models": account.verified_models,
                     "stats": {
                         "total_requests": account.stats.total_requests,
                         "successful_requests": account.stats.successful_requests,
@@ -541,7 +544,7 @@ class AccountManager:
                     await http_client.close()
             
             # Create model cache and update
-            model_cache = ModelInfoCache()
+            model_cache = ModelInfoCache(verified_models=account.verified_models)
             await model_cache.update(models_list)
             
             # Add hidden models
@@ -806,6 +809,22 @@ class AccountManager:
             except ValueError:
                 pass
     
+    async def report_model_verified(self, account_id: str, model: str) -> None:
+        """Record a fully completed request for the account's visible model list."""
+        async with self._lock:
+            account = self._accounts.get(account_id)
+            if not account or not account.model_cache:
+                return
+
+            # Store the canonical request ID; resolver aliases are projected back
+            # into the public list when their target is verified.
+            canonical_model = normalize_model_name(MODEL_ALIASES.get(model, model))
+            account.model_cache.mark_verified(canonical_model)
+            self._dirty = True
+            logger.info(
+                f"Verified model '{canonical_model}' for account {account_id}"
+            )
+
     async def report_failure(
         self,
         account_id: str,
@@ -833,6 +852,9 @@ class AccountManager:
             # Account is healthy, model is just not available on this account
             # Log for user visibility but don't penalize account statistics
             if reason == "INVALID_MODEL_ID":
+                if account.model_cache:
+                    canonical_model = normalize_model_name(MODEL_ALIASES.get(model, model))
+                    account.model_cache.invalidate_verified(canonical_model)
                 account.stats.total_requests += 1
                 self._dirty = True
                 logger.warning(
@@ -893,5 +915,5 @@ class AccountManager:
         all_models = set()
         for account in self._accounts.values():
             if account.model_resolver:
-                all_models.update(account.model_resolver.get_available_models())
+                all_models.update(account.model_resolver.get_verified_available_models())
         return sorted(all_models)

@@ -338,9 +338,8 @@ class TestModelsEndpoint:
         model_ids = [m["id"] for m in response.json()["data"]]
         print(f"Model IDs: {model_ids}")
         
-        # At minimum, hidden models should be present
-        # (even if Kiro API cache is empty)
-        assert len(model_ids) >= 1, "Expected at least one model (hidden models)"
+        # Strict model listing starts empty until a real completion verifies a model.
+        assert isinstance(model_ids, list)
     
     def test_models_format_is_openai_compatible(self, test_client, valid_proxy_api_key):
         """
@@ -363,11 +362,8 @@ class TestModelsEndpoint:
             assert model["object"] == "model", "Model object type should be 'model'"
             assert "owned_by" in model, "Model missing 'owned_by' field"
     
-    def test_models_owned_by_anthropic(self, test_client, valid_proxy_api_key):
-        """
-        What it does: Verifies models are owned by Anthropic.
-        Purpose: Ensure correct model attribution.
-        """
+    def test_models_have_provider_metadata(self, test_client, valid_proxy_api_key):
+        """Verify provider metadata matches the verified model family."""
         print("Action: GET /v1/models with valid auth...")
         response = test_client.get(
             "/v1/models",
@@ -378,7 +374,14 @@ class TestModelsEndpoint:
         assert response.status_code == 200
         
         for model in response.json()["data"]:
-            assert model["owned_by"] == "anthropic"
+            if model["id"].startswith("gpt-"):
+                assert model["owned_by"] == "openai"
+                assert model["description"] == "GPT model via Kiro API"
+            elif model["id"].startswith("claude-"):
+                assert model["owned_by"] == "anthropic"
+                assert model["description"] == "Claude model via Kiro API"
+            else:
+                assert model["owned_by"] == "kiro"
 
 
 # =============================================================================
